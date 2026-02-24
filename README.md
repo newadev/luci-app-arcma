@@ -184,8 +184,8 @@ bin/packages/*/*/luci-app-arcma_*.ipk
 ```bash
 cd /path/to/openwrt
 
-# 1) 在 feeds.conf.default 或 feeds.conf 添加（示例）
-echo "src-git arcma https://github.com/newadev/luci-app-arcma.git" >> feeds.conf.default
+# 1) 在 feeds.conf.default 或 feeds.conf 添加（示例，显式指定 main 分支）
+echo "src-git arcma https://github.com/newadev/luci-app-arcma.git;main" >> feeds.conf.default
 
 # 2) 更新并安装该 feed 内包
 ./scripts/feeds update arcma
@@ -196,7 +196,7 @@ make menuconfig
 make package/luci-app-arcma/compile V=s
 ```
 
-> 若你的仓库根目录不是包目录（而是包含 `luci-app-arcma/` 子目录），请在 feed 侧确保索引到实际包路径，或改用“方式一（本地包目录）”。
+> 本仓库采用 feed 根目录 + `luci-app-arcma/` 子目录结构，可被 `scripts/feeds` 正常索引。
 
 ---
 

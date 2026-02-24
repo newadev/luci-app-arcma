@@ -6,7 +6,7 @@ include $(TOPDIR)/rules.mk
 LUCI_NAME:=luci-app-arcma
 PKG_VERSION:=1.0.0
 
-LUCI_TITLE:=LuCI for Auto MAC Randomizer
+LUCI_TITLE:=LuCI for ARCMA
 LUCI_DESCRIPTION:=Automatically change MAC addresses of all network interfaces. \
 	Zero external dependencies — pure POSIX sh with embedded OUI vendor database.
 
