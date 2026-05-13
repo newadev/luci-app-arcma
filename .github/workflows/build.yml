@@ -8,6 +8,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build_ipk:
     runs-on: ubuntu-latest
@@ -23,7 +26,8 @@ jobs:
           SDK_FILE=$(curl -sL $SDK_URL/sha256sums | grep "openwrt-sdk" | awk '{print $2}' | sed 's/*//g')
           wget $SDK_URL/$SDK_FILE
           tar -xf $SDK_FILE
-          mv openwrt-sdk-* sdk
+          SDK_DIR="${SDK_FILE%.tar*}"
+          mv "$SDK_DIR" sdk
           
       - name: Prepare feeds and package
         run: |
