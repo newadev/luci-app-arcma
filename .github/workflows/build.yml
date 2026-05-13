@@ -19,9 +19,11 @@ jobs:
 
       - name: Setup OpenWrt SDK
         run: |
-          wget https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          tar -xf openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          mv openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64 sdk
+          SDK_URL="https://downloads.openwrt.org/releases/25.12.3/targets/x86/64"
+          SDK_FILE=$(curl -sL $SDK_URL/sha256sums | grep "openwrt-sdk" | awk '{print $2}' | sed 's/*//g')
+          wget $SDK_URL/$SDK_FILE
+          tar -xf $SDK_FILE
+          mv openwrt-sdk-* sdk
           
       - name: Prepare feeds and package
         run: |
