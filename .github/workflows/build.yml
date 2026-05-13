@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: source
 
@@ -49,7 +49,7 @@ jobs:
           find bin/ -name "*.ipk" -exec cp {} ../source/ \;
           
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: luci-app-arcma-ipk
           path: source/*.ipk
