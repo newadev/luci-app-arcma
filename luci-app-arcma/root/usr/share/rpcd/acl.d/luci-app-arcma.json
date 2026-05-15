@@ -2,6 +2,9 @@
   "luci-app-arcma": {
     "description": "Grant access to arcma MAC randomizer",
     "read": {
+      "ubus": {
+        "session": [ "access", "login" ]
+      },
       "file": [
         "/usr/share/arcma/oui/*",
         "/tmp/arcma_orig/*",
