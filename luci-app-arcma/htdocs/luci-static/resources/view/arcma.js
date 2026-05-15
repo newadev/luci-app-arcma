@@ -240,7 +240,7 @@ return view.extend({
         ]),
         outputEl
       ]);
-    }, this);
+    }, o, this);
 
     return m.render();
   }
