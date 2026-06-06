@@ -1,0 +1,31 @@
+{
+  "luci-app-arcma": {
+    "description": "Grant access to arcma MAC randomizer",
+    "read": {
+      "ubus": {
+        "session": [ "access", "login" ]
+      },
+      "file": [
+        "/usr/share/arcma/oui/*",
+        "/etc/arcma/orig/*",
+        "/sys/class/net/*/address",
+        "/sys/class/net/*/permaddr"
+      ],
+      "uci": [
+        "arcma",
+        "network"
+      ]
+    },
+    "write": {
+      "uci": [
+        "arcma",
+        "network"
+      ]
+    },
+    "exec": {
+      "file": [
+        "/usr/sbin/arcma"
+      ]
+    }
+  }
+}

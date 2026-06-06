@@ -1,0 +1,197 @@
+name: Build OpenWrt Packages
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  OPENWRT_TARGET: x86/64
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build OpenWrt ${{ matrix.openwrt_version }} ${{ matrix.package_ext }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - openwrt_version: 24.10.7
+            package_ext: ipk
+            install_command: opkg install *.ipk
+            artifact_name: arcma-openwrt-24.10.7-ipk
+          - openwrt_version: 25.12.4
+            package_ext: apk
+            install_command: apk add --allow-untrusted *.apk
+            artifact_name: arcma-openwrt-25.12.4-apk
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+        with:
+          path: source
+
+      - name: Install Host Build Dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison gawk \
+            gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev \
+            file wget curl zstd zip
+
+      - name: Setup OpenWrt SDK
+        env:
+          OPENWRT_VERSION: ${{ matrix.openwrt_version }}
+        run: |
+          set -eux
+          SDK_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}"
+          curl -fsSLO "${SDK_URL}/sha256sums"
+          SDK_FILE=$(awk '/openwrt-sdk/ { sub(/^\*/, "", $2); print $2; exit }' sha256sums)
+          test -n "${SDK_FILE}"
+          curl -fSLO "${SDK_URL}/${SDK_FILE}"
+          awk -v file="${SDK_FILE}" '$2 == file || $2 == "*" file { print $1 "  " file }' sha256sums | sha256sum -c -
+          tar -xf "${SDK_FILE}"
+          SDK_DIR="${SDK_FILE%.tar*}"
+          mv "$SDK_DIR" sdk
+
+      - name: Prepare Package in SDK
+        run: |
+          set -eux
+          cd sdk
+          cp -r ../source/luci-app-arcma package/
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+
+      - name: Build Package Bundle
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          INSTALL_COMMAND: ${{ matrix.install_command }}
+          OPENWRT_VERSION: ${{ matrix.openwrt_version }}
+          PACKAGE_EXT: ${{ matrix.package_ext }}
+        run: |
+          set -eux
+          cd sdk
+          make package/luci-app-arcma/compile V=s
+
+          BUNDLE_DIR="../source/bundle/${ARTIFACT_NAME}"
+          mkdir -p "${BUNDLE_DIR}"
+          find bin/ -type f \( \
+            -name "luci-app-arcma*.${PACKAGE_EXT}" -o \
+            -name "luci-i18n-arcma*.${PACKAGE_EXT}" \
+          \) -exec cp {} "${BUNDLE_DIR}/" \;
+
+          test -n "$(find "${BUNDLE_DIR}" -name "luci-app-arcma*.${PACKAGE_EXT}" -print -quit)"
+          test -n "$(find "${BUNDLE_DIR}" -name "luci-i18n-arcma-zh-cn*.${PACKAGE_EXT}" -print -quit)"
+          test -n "$(find "${BUNDLE_DIR}" -name "luci-i18n-arcma-zh-tw*.${PACKAGE_EXT}" -print -quit)"
+
+          cat > "${BUNDLE_DIR}/INSTALL.txt" <<EOF
+          ARCMA for OpenWrt ${OPENWRT_VERSION}
+
+          This bundle contains the ARCMA LuCI app and Chinese language packages.
+          Install all package files in this directory:
+
+              ${INSTALL_COMMAND}
+
+          After installation, restart LuCI services if needed:
+
+              /etc/init.d/rpcd restart
+              /etc/init.d/uhttpd restart
+          EOF
+
+          cd "${BUNDLE_DIR}"
+          find . -maxdepth 1 -type f -name "*.${PACKAGE_EXT}" -print0 | sort -z | xargs -0 md5sum > MD5SUMS.txt
+          find . -maxdepth 1 -type f -name "*.${PACKAGE_EXT}" -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          zip -9 -r "../${ARTIFACT_NAME}.zip" .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: source/bundle/${{ matrix.artifact_name }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Prepare Release Assets
+        run: |
+          set -eux
+          cd dist
+          test -n "$(find . -maxdepth 1 -type f -name 'arcma-openwrt-*.zip' -print -quit)"
+          find . -maxdepth 1 -type f -name 'arcma-openwrt-*.zip' -print0 | sort -z | xargs -0 md5sum > MD5SUMS.txt
+          find . -maxdepth 1 -type f -name 'arcma-openwrt-*.zip' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+
+          {
+            echo "ARCMA package bundles"
+            echo
+            echo "Download the bundle matching your OpenWrt package manager:"
+            echo
+            echo "- OpenWrt 24.10.7: arcma-openwrt-24.10.7-ipk.zip"
+            echo "- OpenWrt 25.12.4: arcma-openwrt-25.12.4-apk.zip"
+            echo
+            echo "Each zip contains the ARCMA LuCI app, Simplified Chinese and Traditional Chinese language packages, INSTALL.txt, MD5SUMS.txt and SHA256SUMS.txt."
+            echo
+            echo "MD5SUMS"
+            echo '```text'
+            cat MD5SUMS.txt
+            echo '```'
+            echo
+            echo "SHA256SUMS"
+            echo '```text'
+            cat SHA256SUMS.txt
+            echo '```'
+          } > release-notes.md
+
+          find . -maxdepth 1 -type f -print | sort
+
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+            RELEASE_TITLE="ARCMA ${GITHUB_REF_NAME}"
+            gh release delete "${TAG_NAME}" --yes || true
+          else
+            TAG_NAME="latest"
+            RELEASE_TITLE="ARCMA latest build"
+            gh release delete "${TAG_NAME}" --cleanup-tag --yes || true
+            git tag -f "${TAG_NAME}" "${GITHUB_SHA}"
+            git push -f origin "refs/tags/${TAG_NAME}"
+          fi
+
+          gh release create "${TAG_NAME}" \
+            dist/arcma-openwrt-24.10.7-ipk.zip \
+            dist/arcma-openwrt-25.12.4-apk.zip \
+            dist/MD5SUMS.txt \
+            dist/SHA256SUMS.txt \
+            --title "${RELEASE_TITLE}" \
+            --notes-file dist/release-notes.md \
+            --latest
