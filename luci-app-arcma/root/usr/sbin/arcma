@@ -6,11 +6,12 @@
 # Tested with OpenWrt Stable, Old Stable and Development Snapshots
 #
 # Usage: arcma <command> [options]
-#   arcma apply   [<iface> ...]   Apply random MAC (all interfaces if none specified)
+#   arcma apply   [<iface> ...]   Apply random MAC (physical interfaces if none specified)
 #   arcma restore [<iface> ...]   Restore original MAC
 #   arcma show    [<iface> ...]   Show current / original MAC info
 #   arcma list    [<type>]        List embedded OUI vendor names (type: router wlan eth console)
 #   arcma gen     [options]       Generate a MAC address and print it (no apply)
+#   arcma last-log                Show last asynchronous LuCI action log
 #
 # Options for apply/gen:
 #   -m local           Locally-administered random (default)
@@ -78,7 +79,7 @@ mac_format() {
     echo "$1" | sed 's/../&:/g;s/.$//' | tr 'a-f' 'A-F'
 }
 
-# oui_strip <XX:XX:XX or XXXXXX>  →  6 lowercase hex chars
+# oui_strip <colon-separated or compact OUI>  ->  6 lowercase hex chars
 oui_strip() {
     echo "$1" | tr -d ':' | tr 'A-F' 'a-f' | cut -c1-6
 }
@@ -176,7 +177,10 @@ pick_oui() {
     [ -f "${file}" ] || { log_err "OUI type '${type}' not found in ${ARCMA_OUI_DIR}"; return 1; }
 
     local line
-    line=$(grep -i -e "^${vendor}	" "${file}" 2>/dev/null | head -n1)
+    line=$(awk -F '\t' -v vendor="${vendor}" '
+        BEGIN { wanted = tolower(vendor) }
+        tolower($1) == wanted { print; exit }
+    ' "${file}" 2>/dev/null)
     [ -z "${line}" ] && { log_err "Vendor '${vendor}' not found in ${type}.txt"; return 1; }
 
     local oui_list
@@ -253,7 +257,7 @@ get_perm_mac() {
 
 # set_mac <iface> <MAC>
 # Apply MAC using `ip link` from iproute2 (BusyBox ifconfig is legacy and deprecated in 24/25)
-# Interface is always brought back UP even if the address change fails (C1 fix).
+# Interface is always brought back UP even if the address change fails.
 set_mac() {
     local iface="$1"
     local mac="$2"
@@ -534,7 +538,7 @@ cmd_show() {
         cur=$(get_current_mac "${iface}" 2>/dev/null || echo "N/A")
         orig=$(get_orig_mac "${iface}" 2>/dev/null || echo "N/A")
         
-        # Determine if locally administered (C3 fix: guard against N/A / empty cur)
+        # Determine if locally administered while guarding against unavailable data.
         local first_byte=""
         if [ "${cur}" != "N/A" ] && [ -n "${cur}" ]; then
             first_byte=$(echo "${cur}" | cut -d: -f1 | tr 'A-F' 'a-f')
@@ -667,8 +671,8 @@ cmd_apply_from_config() {
 
 # uci_apply [iface_filter]
 # Reads /etc/config/arcma and applies per-section or global settings
-# M2+M3 fix: track applied_count separately from section_count so that
-# global fallback triggers when all sections are disabled OR none match filter.
+# Track applied_count separately from section_count so that global fallback
+# triggers when all sections are disabled or none match a hotplug filter.
 uci_apply() {
     local filter="$1"
     local rc=0
@@ -740,7 +744,7 @@ uci_apply() {
         [ "${g_mode}" = "oui" ] && [ -z "${g_oui_prefix}" ] && [ -z "${g_oui_vendor}" ] && \
             g_oui_vendor=$(first_vendor "${g_oui_type}")
 
-        # When filter is set (hotplug), apply only to that device; otherwise all interfaces
+        # When filter is set (hotplug), apply only to that device; otherwise all physical interfaces.
         if [ -n "${filter}" ]; then
             cmd_apply_from_config "${g_mode}" "${g_oui_type}" "${g_oui_vendor}" \
                 "${g_oui_prefix}" "${g_static_mac}" "${g_persist}" "${g_seq}" \
@@ -773,14 +777,29 @@ run_async() {
 
     mkdir -p /tmp/arcma 2>/dev/null
     chmod 0700 /tmp/arcma 2>/dev/null
+    : > /tmp/arcma/last.log || { log_err "Unable to write /tmp/arcma/last.log"; return 1; }
+    chmod 0600 /tmp/arcma/last.log 2>/dev/null
     (
+        local rc=0
+        echo "[arcma] ${cmd} started"
         case "${cmd}" in
-            uci-apply) uci_apply "$@" ;;
-            uci-restore) uci_restore "$@" ;;
+            uci-apply) uci_apply "$@" || rc=$? ;;
+            uci-restore) uci_restore "$@" || rc=$? ;;
+            *) log_err "Unknown async command: ${cmd}"; rc=1 ;;
         esac
-    ) >/tmp/arcma/last.log 2>&1 &
+        echo "[arcma] ${cmd} finished rc=${rc}"
+        exit "${rc}"
+    ) >>/tmp/arcma/last.log 2>&1 &
 
     echo "[arcma] ${cmd} started in background"
+}
+
+cmd_last_log() {
+    if [ -f /tmp/arcma/last.log ]; then
+        cat /tmp/arcma/last.log
+    else
+        echo "[arcma] no asynchronous action log found"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -791,13 +810,14 @@ printf "arcma v%s — Automatic Random Complete MAC Address changer
 BusyBox ash-compatible. Compatible with OpenWrt Stable, Old Stable and Development Snapshots
 
 Commands:
-  apply   [opts] [iface ...]   Change MAC addresses
+  apply   [opts] [iface ...]   Change MAC addresses; defaults to physical interfaces
   restore [iface ...]          Restore original MACs
   show    [iface ...]          Show current/original MAC info
   list    [type]               List OUI types and vendor names
   gen     [opts]               Generate and print a MAC (no apply)
   uci-apply-async              Apply UCI config in background
   uci-restore-async            Restore original MACs in background
+  last-log                     Show last asynchronous LuCI action log
 
 Options (apply / gen):
   -m local            Locally-administered random (default)
@@ -812,7 +832,7 @@ Options (apply / gen):
   -p                  Persist MAC into uci network config
 
 Examples:
-  arcma apply                         # random local MAC on all ifaces
+  arcma apply                         # random local MAC on physical ifaces
   arcma apply -m oui -t router -v Asus eth0 eth1
   arcma apply -m oui -t wlan -v Intel -e wlan0 wlan1
   arcma restore
@@ -833,6 +853,7 @@ case "${CMD}" in
     show)       cmd_show "$@" ;;
     list)       cmd_list "$@" ;;
     gen)        cmd_gen "$@" ;;
+    last-log)   cmd_last_log ;;
     uci-apply)  uci_apply "$@" ;;
     uci-restore) uci_restore "$@" ;;
     uci-apply-async) run_async uci-apply "$@" ;;

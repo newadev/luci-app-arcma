@@ -21,80 +21,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+
+      - name: Validate Source Data
+        run: |
+          set -eux
+          python3 .github/scripts/check-oui-data.py
+          node --check luci-app-arcma/htdocs/luci-static/resources/view/arcma.js
+
   resolve:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.resolve.outputs.matrix }}
     steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+
       - name: Resolve OpenWrt Release Tracks
         id: resolve
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
-          import json
-          import re
-          import urllib.request
-
-          DOWNLOADS_URL = "https://downloads.openwrt.org/"
-          TARGET = "x86/64"
-
-          html = urllib.request.urlopen(DOWNLOADS_URL, timeout=30).read().decode("utf-8", "replace")
-
-          def extract_version(section):
-              match = re.search(
-                  rf"{re.escape(section)}.*?OpenWrt\s+([0-9]+\.[0-9]+\.[0-9]+)",
-                  html,
-                  re.DOTALL,
-              )
-              if not match:
-                  raise SystemExit(f"Unable to resolve {section} from {DOWNLOADS_URL}")
-              return match.group(1)
-
-          def package_ext(version):
-              major = int(version.split(".", 1)[0])
-              return "apk" if major >= 25 else "ipk"
-
-          def install_command(ext):
-              return "apk add --allow-untrusted *.apk" if ext == "apk" else "opkg install *.ipk"
-
-          def release_track(track, label, version):
-              ext = package_ext(version)
-              slug = label.lower().replace(" ", "-")
-              return {
-                  "track": track,
-                  "openwrt_version": version,
-                  "openwrt_label": f"OpenWrt {label} {version}",
-                  "sdk_url": f"https://downloads.openwrt.org/releases/{version}/targets/{TARGET}",
-                  "package_ext": ext,
-                  "install_command": install_command(ext),
-                  "artifact_name": f"arcma-openwrt-{slug}-{version}-{ext}",
-              }
-
-          stable = extract_version("Stable Release")
-          old_stable = extract_version("Old Stable Release")
-
-          matrix = {
-              "include": [
-                  release_track("stable", "Stable", stable),
-                  release_track("old-stable", "Old Stable", old_stable),
-                  {
-                      "track": "snapshots",
-                      "openwrt_version": "snapshots",
-                      "openwrt_label": "OpenWrt Development Snapshots",
-                      "sdk_url": f"https://downloads.openwrt.org/snapshots/targets/{TARGET}",
-                      "package_ext": "apk",
-                      "install_command": "apk add --allow-untrusted *.apk",
-                      "artifact_name": "arcma-openwrt-development-snapshots-apk",
-                  },
-              ]
-          }
-
-          print(f"matrix={json.dumps(matrix, separators=(',', ':'))}")
-          PY
+          python3 .github/scripts/resolve-openwrt-matrix.py --github-output >> "${GITHUB_OUTPUT}"
 
   build:
     runs-on: ubuntu-latest
-    needs: resolve
+    needs:
+      - validate
+      - resolve
     name: Build ${{ matrix.openwrt_label }} ${{ matrix.package_ext }}
     strategy:
       fail-fast: false
@@ -244,19 +201,40 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             TAG_NAME="${GITHUB_REF_NAME}"
             RELEASE_TITLE="ARCMA ${GITHUB_REF_NAME}"
-            gh release delete "${TAG_NAME}" --yes || true
           else
             TAG_NAME="latest"
             RELEASE_TITLE="ARCMA latest build"
-            gh release delete "${TAG_NAME}" --cleanup-tag --yes || true
             git tag -f "${TAG_NAME}" "${GITHUB_SHA}"
             git push -f origin "refs/tags/${TAG_NAME}"
           fi
 
-          gh release create "${TAG_NAME}" \
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" \
+              --title "${RELEASE_TITLE}" \
+              --notes-file dist/release-notes.md \
+              --latest
+          else
+            gh release create "${TAG_NAME}" \
+              --title "${RELEASE_TITLE}" \
+              --notes-file dist/release-notes.md \
+              --latest
+          fi
+
+          CURRENT_ASSETS="$(find dist -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')"
+          RELEASE_ASSETS="$(
+            gh release view "${TAG_NAME}" --json assets --jq '.assets[].name' \
+              | grep -E '^(arcma-openwrt-.*\.zip|MD5SUMS\.txt|SHA256SUMS\.txt)$' || true
+          )"
+          printf '%s\n' "${RELEASE_ASSETS}" | while read -r asset; do
+                [ -n "${asset}" ] || continue
+                case " ${CURRENT_ASSETS} " in
+                  *" ${asset} "*) ;;
+                  *) gh release delete-asset "${TAG_NAME}" "${asset}" --yes || true ;;
+                esac
+              done
+
+          gh release upload "${TAG_NAME}" \
             dist/arcma-openwrt-*.zip \
             dist/MD5SUMS.txt \
             dist/SHA256SUMS.txt \
-            --title "${RELEASE_TITLE}" \
-            --notes-file dist/release-notes.md \
-            --latest
+            --clobber

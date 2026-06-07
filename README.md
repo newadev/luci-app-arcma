@@ -1,6 +1,6 @@
 # luci-app-arcma
 
-**ARCMA** 是一个用于 OpenWrt 的 LuCI 应用，用来在启动或接口上线时自动更改网络接口 MAC 地址。
+**ARCMA** 是一个用于 OpenWrt 的 LuCI 应用，用来在启动或接口上线时自动更改物理网络接口 MAC 地址。
 
 它提供 LuCI 图形界面、命令行工具、init.d 启动任务和 hotplug 触发器，支持本地管理随机 MAC、厂商 OUI 伪装和固定 MAC 三种模式。
 
@@ -197,6 +197,7 @@ hotplug 会优先使用环境变量 `DEVICE`。如果不存在，则从 `network
 - `persist=1` 会写入 `/etc/config/network` 并提交 UCI 配置，适合希望重启后保持同一 MAC 的场景。
 - DSA/bridge 场景请优先对 `br-lan` 这类 network device 做持久化；桥成员端口（例如 `eth1`、`lan1`）运行时可以改 MAC，但不一定有对应的 UCI device 段可写。
 - 默认配置不会自动启用，需要在 LuCI 或 UCI 中设置 `arcma.global.enabled='1'`。
+- 软件包升级不会自动恢复原始 MAC，避免远程升级时主动 down/up 接口导致 SSH 断开；需要恢复时请手动执行 `arcma restore`。
 - 如果从旧版本升级，建议检查 `/etc/config/arcma` 中是否残留旧的 `config iface 'default'` 段；该段可能覆盖全局设置。
 
 ## 排障
@@ -223,6 +224,7 @@ uci show arcma
 查看 LuCI `Apply Now` / `Restore Original` 后台执行日志：
 
 ```bash
+arcma last-log
 cat /tmp/arcma/last.log
 ```
 
