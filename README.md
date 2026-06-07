@@ -39,7 +39,7 @@ luci-app-arcma/
 
 - OpenWrt / ImmortalWrt 24.10 或更新版本。
 - `ip-full`，由包依赖自动选择。
-- BusyBox `sh`、`od`、`uci`、`logger` 等基础工具。
+- BusyBox `sh`、`hexdump`、`uci`、`logger` 等基础工具。
 
 ## 编译安装
 
@@ -195,6 +195,7 @@ hotplug 会优先使用环境变量 `DEVICE`。如果不存在，则从 `network
 
 - 修改 MAC 会短暂 down/up 目标接口，可能导致连接瞬断。
 - `persist=1` 会写入 `/etc/config/network` 并提交 UCI 配置，适合希望重启后保持同一 MAC 的场景。
+- DSA/bridge 场景请优先对 `br-lan` 这类 network device 做持久化；桥成员端口（例如 `eth1`、`lan1`）运行时可以改 MAC，但不一定有对应的 UCI device 段可写。
 - 默认配置不会自动启用，需要在 LuCI 或 UCI 中设置 `arcma.global.enabled='1'`。
 - 如果从旧版本升级，建议检查 `/etc/config/arcma` 中是否残留旧的 `config iface 'default'` 段；该段可能覆盖全局设置。
 
