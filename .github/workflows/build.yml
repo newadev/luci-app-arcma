@@ -6,6 +6,8 @@ on:
       - main
     tags:
       - 'v*'
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 env:
@@ -19,31 +21,84 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve OpenWrt Release Tracks
+        id: resolve
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          import re
+          import urllib.request
+
+          DOWNLOADS_URL = "https://downloads.openwrt.org/"
+          TARGET = "x86/64"
+
+          html = urllib.request.urlopen(DOWNLOADS_URL, timeout=30).read().decode("utf-8", "replace")
+
+          def extract_version(section):
+              match = re.search(
+                  rf"{re.escape(section)}.*?OpenWrt\s+([0-9]+\.[0-9]+\.[0-9]+)",
+                  html,
+                  re.DOTALL,
+              )
+              if not match:
+                  raise SystemExit(f"Unable to resolve {section} from {DOWNLOADS_URL}")
+              return match.group(1)
+
+          def package_ext(version):
+              major = int(version.split(".", 1)[0])
+              return "apk" if major >= 25 else "ipk"
+
+          def install_command(ext):
+              return "apk add --allow-untrusted *.apk" if ext == "apk" else "opkg install *.ipk"
+
+          def release_track(track, label, version):
+              ext = package_ext(version)
+              slug = label.lower().replace(" ", "-")
+              return {
+                  "track": track,
+                  "openwrt_version": version,
+                  "openwrt_label": f"OpenWrt {label} {version}",
+                  "sdk_url": f"https://downloads.openwrt.org/releases/{version}/targets/{TARGET}",
+                  "package_ext": ext,
+                  "install_command": install_command(ext),
+                  "artifact_name": f"arcma-openwrt-{slug}-{version}-{ext}",
+              }
+
+          stable = extract_version("Stable Release")
+          old_stable = extract_version("Old Stable Release")
+
+          matrix = {
+              "include": [
+                  release_track("stable", "Stable", stable),
+                  release_track("old-stable", "Old Stable", old_stable),
+                  {
+                      "track": "snapshots",
+                      "openwrt_version": "snapshots",
+                      "openwrt_label": "OpenWrt Development Snapshots",
+                      "sdk_url": f"https://downloads.openwrt.org/snapshots/targets/{TARGET}",
+                      "package_ext": "apk",
+                      "install_command": "apk add --allow-untrusted *.apk",
+                      "artifact_name": "arcma-openwrt-development-snapshots-apk",
+                  },
+              ]
+          }
+
+          print(f"matrix={json.dumps(matrix, separators=(',', ':'))}")
+          PY
+
   build:
     runs-on: ubuntu-latest
+    needs: resolve
     name: Build ${{ matrix.openwrt_label }} ${{ matrix.package_ext }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - openwrt_version: 24.10.7
-            openwrt_label: OpenWrt 24.10.7
-            sdk_url: https://downloads.openwrt.org/releases/24.10.7/targets/x86/64
-            package_ext: ipk
-            install_command: opkg install *.ipk
-            artifact_name: arcma-openwrt-24.10.7-ipk
-          - openwrt_version: 25.12.4
-            openwrt_label: OpenWrt 25.12.4
-            sdk_url: https://downloads.openwrt.org/releases/25.12.4/targets/x86/64
-            package_ext: apk
-            install_command: apk add --allow-untrusted *.apk
-            artifact_name: arcma-openwrt-25.12.4-apk
-          - openwrt_version: snapshots
-            openwrt_label: OpenWrt Development Snapshots
-            sdk_url: https://downloads.openwrt.org/snapshots/targets/x86/64
-            package_ext: apk
-            install_command: apk add --allow-untrusted *.apk
-            artifact_name: arcma-openwrt-development-snapshots-apk
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
 
     steps:
       - name: Checkout Source
@@ -134,7 +189,9 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - resolve
+      - build
     if: ${{ needs.build.result == 'success' }}
     steps:
       - name: Checkout Source
@@ -159,9 +216,9 @@ jobs:
             echo
             echo "Download the bundle matching your OpenWrt package manager:"
             echo
-            echo "- OpenWrt 24.10.7: arcma-openwrt-24.10.7-ipk.zip"
-            echo "- OpenWrt 25.12.4: arcma-openwrt-25.12.4-apk.zip"
-            echo "- OpenWrt Development Snapshots: arcma-openwrt-development-snapshots-apk.zip"
+            find . -maxdepth 1 -type f -name 'arcma-openwrt-*.zip' -print \
+              | sort \
+              | sed 's#^\./#- #'
             echo
             echo "Each zip contains the ARCMA LuCI app, Simplified Chinese and Traditional Chinese language packages, INSTALL.txt, MD5SUMS.txt and SHA256SUMS.txt."
             echo
@@ -197,9 +254,7 @@ jobs:
           fi
 
           gh release create "${TAG_NAME}" \
-            dist/arcma-openwrt-24.10.7-ipk.zip \
-            dist/arcma-openwrt-25.12.4-apk.zip \
-            dist/arcma-openwrt-development-snapshots-apk.zip \
+            dist/arcma-openwrt-*.zip \
             dist/MD5SUMS.txt \
             dist/SHA256SUMS.txt \
             --title "${RELEASE_TITLE}" \

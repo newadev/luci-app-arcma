@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # arcma - Automatic Random Complete MAC Address changer
 # Requires only BusyBox ash-compatible sh, hexdump, uci, ip
-# Tested with OpenWrt 24.10, 25.12 and Development Snapshots
+# Tested with OpenWrt Stable, Old Stable and Development Snapshots
 #
 # Usage: arcma <command> [options]
 #   arcma apply   [<iface> ...]   Apply random MAC (all interfaces if none specified)
@@ -788,7 +788,7 @@ run_async() {
 # ──────────────────────────────────────────────────────────
 usage() {
 printf "arcma v%s — Automatic Random Complete MAC Address changer
-BusyBox ash-compatible. Compatible with OpenWrt 24.10, 25.12 and Development Snapshots
+BusyBox ash-compatible. Compatible with OpenWrt Stable, Old Stable and Development Snapshots
 
 Commands:
   apply   [opts] [iface ...]   Change MAC addresses
