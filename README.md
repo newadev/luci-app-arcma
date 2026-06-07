@@ -1,11 +1,11 @@
 # luci-app-arcma
 
-**ARCMA** 是一个用于 OpenWrt / ImmortalWrt 的 LuCI 应用，用来在启动或接口上线时自动更改网络接口 MAC 地址。
+**ARCMA** 是一个用于 OpenWrt 的 LuCI 应用，用来在启动或接口上线时自动更改网络接口 MAC 地址。
 
 它提供 LuCI 图形界面、命令行工具、init.d 启动任务和 hotplug 触发器，支持本地管理随机 MAC、厂商 OUI 伪装和固定 MAC 三种模式。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](luci-app-arcma/LICENSE)
-[![OpenWrt/ImmortalWrt >= 24.10](https://img.shields.io/badge/OpenWrt%2FImmortalWrt-%3E%3D24.10-green.svg)](https://openwrt.org)
+[![OpenWrt 24/25/Snapshots](https://img.shields.io/badge/OpenWrt-24%2F25%2FSnapshots-green.svg)](https://openwrt.org)
 
 ## 特性
 
@@ -37,7 +37,7 @@ luci-app-arcma/
 
 ## 依赖
 
-- OpenWrt / ImmortalWrt 24.10 或更新版本。
+- OpenWrt 24.10、OpenWrt 25.12 或 OpenWrt Development Snapshots。
 - `ip-full`，由包依赖自动选择。
 - BusyBox `sh`、`hexdump`、`uci`、`logger` 等基础工具。
 

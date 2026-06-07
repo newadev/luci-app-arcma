@@ -10,7 +10,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  OPENWRT_TARGET: x86/64
 
 permissions:
   contents: write
@@ -22,19 +21,29 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Build OpenWrt ${{ matrix.openwrt_version }} ${{ matrix.package_ext }}
+    name: Build ${{ matrix.openwrt_label }} ${{ matrix.package_ext }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - openwrt_version: 24.10.7
+            openwrt_label: OpenWrt 24.10.7
+            sdk_url: https://downloads.openwrt.org/releases/24.10.7/targets/x86/64
             package_ext: ipk
             install_command: opkg install *.ipk
             artifact_name: arcma-openwrt-24.10.7-ipk
           - openwrt_version: 25.12.4
+            openwrt_label: OpenWrt 25.12.4
+            sdk_url: https://downloads.openwrt.org/releases/25.12.4/targets/x86/64
             package_ext: apk
             install_command: apk add --allow-untrusted *.apk
             artifact_name: arcma-openwrt-25.12.4-apk
+          - openwrt_version: snapshots
+            openwrt_label: OpenWrt Development Snapshots
+            sdk_url: https://downloads.openwrt.org/snapshots/targets/x86/64
+            package_ext: apk
+            install_command: apk add --allow-untrusted *.apk
+            artifact_name: arcma-openwrt-development-snapshots-apk
 
     steps:
       - name: Checkout Source
@@ -52,10 +61,9 @@ jobs:
 
       - name: Setup OpenWrt SDK
         env:
-          OPENWRT_VERSION: ${{ matrix.openwrt_version }}
+          SDK_URL: ${{ matrix.sdk_url }}
         run: |
           set -eux
-          SDK_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}"
           curl -fsSLO "${SDK_URL}/sha256sums"
           SDK_FILE=$(awk '/openwrt-sdk/ { sub(/^\*/, "", $2); print $2; exit }' sha256sums)
           test -n "${SDK_FILE}"
@@ -79,7 +87,7 @@ jobs:
         env:
           ARTIFACT_NAME: ${{ matrix.artifact_name }}
           INSTALL_COMMAND: ${{ matrix.install_command }}
-          OPENWRT_VERSION: ${{ matrix.openwrt_version }}
+          OPENWRT_LABEL: ${{ matrix.openwrt_label }}
           PACKAGE_EXT: ${{ matrix.package_ext }}
         run: |
           set -eux
@@ -98,7 +106,7 @@ jobs:
           test -n "$(find "${BUNDLE_DIR}" -name "luci-i18n-arcma-zh-tw*.${PACKAGE_EXT}" -print -quit)"
 
           cat > "${BUNDLE_DIR}/INSTALL.txt" <<EOF
-          ARCMA for OpenWrt ${OPENWRT_VERSION}
+          ARCMA for ${OPENWRT_LABEL}
 
           This bundle contains the ARCMA LuCI app and Chinese language packages.
           Install all package files in this directory:
@@ -153,6 +161,7 @@ jobs:
             echo
             echo "- OpenWrt 24.10.7: arcma-openwrt-24.10.7-ipk.zip"
             echo "- OpenWrt 25.12.4: arcma-openwrt-25.12.4-apk.zip"
+            echo "- OpenWrt Development Snapshots: arcma-openwrt-development-snapshots-apk.zip"
             echo
             echo "Each zip contains the ARCMA LuCI app, Simplified Chinese and Traditional Chinese language packages, INSTALL.txt, MD5SUMS.txt and SHA256SUMS.txt."
             echo
@@ -190,6 +199,7 @@ jobs:
           gh release create "${TAG_NAME}" \
             dist/arcma-openwrt-24.10.7-ipk.zip \
             dist/arcma-openwrt-25.12.4-apk.zip \
+            dist/arcma-openwrt-development-snapshots-apk.zip \
             dist/MD5SUMS.txt \
             dist/SHA256SUMS.txt \
             --title "${RELEASE_TITLE}" \
