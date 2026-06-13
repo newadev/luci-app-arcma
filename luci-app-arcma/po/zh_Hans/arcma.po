@@ -75,8 +75,8 @@ msgstr "多接口间 NIC 部分递增（所有接口共用相同 OUI 前缀）"
 msgid "Persist MAC"
 msgstr "持久化 MAC"
 
-msgid "Write randomized MAC into <code>uci network.&lt;iface&gt;.macaddr</code> so it survives reboot. <b>Warning:</b> Frequent writes to UCI config can wear out flash memory on some devices."
-msgstr "将随机化的 MAC 写入 <code>uci network.&lt;接口&gt;.macaddr</code>，使其在重启后保持。<b>警告：</b>频繁写入 UCI 配置可能会磨损某些设备上的闪存。"
+msgid "Write randomized MAC into <code>/etc/config/network</code> so it survives reboot. If no matching device section exists, ARCMA creates one. <b>Warning:</b> Frequent writes to UCI config can wear out flash memory on some devices."
+msgstr "将随机化的 MAC 写入 <code>/etc/config/network</code>，使其在重启后保持。如果没有匹配的 device 段，ARCMA 会自动创建。<b>警告：</b>频繁写入 UCI 配置可能会磨损某些设备上的闪存。"
 
 msgid "Per-interface Override"
 msgstr "按接口独立配置"

@@ -16,7 +16,7 @@
 - 支持按物理接口覆盖全局配置。
 - 自动保存原始 MAC 到 `/etc/arcma/orig/`，便于恢复。
 - hotplug 使用 `/tmp` 原子锁做短时间防抖，避免频繁 ifup 重复执行。
-- 可选将随机后的 MAC 写入 `uci network.<iface>.macaddr`。
+- 可选将随机后的 MAC 写入 `/etc/config/network` 的 device/interface `macaddr`。
 
 ## 目录结构
 
@@ -194,7 +194,7 @@ hotplug 会优先使用环境变量 `DEVICE`。如果不存在，则从 `network
 ## 注意事项
 
 - 修改 MAC 会短暂 down/up 目标接口，可能导致连接瞬断。
-- `persist=1` 会写入 `/etc/config/network` 并提交 UCI 配置，适合希望重启后保持同一 MAC 的场景。
+- `persist=1` 会写入 `/etc/config/network` 并提交 UCI 配置；如果找不到现有 device/interface 段，ARCMA 会为目标设备创建 `config device` 段，适合希望重启后保持同一 MAC 的场景。
 - DSA/bridge 场景请优先对 `br-lan` 这类 network device 做持久化；桥成员端口（例如 `eth1`、`lan1`）运行时可以改 MAC，但不一定有对应的 UCI device 段可写。
 - 默认配置不会自动启用，需要在 LuCI 或 UCI 中设置 `arcma.global.enabled='1'`。
 - 软件包升级不会自动恢复原始 MAC，避免远程升级时主动 down/up 接口导致 SSH 断开；需要恢复时请手动执行 `arcma restore`。
